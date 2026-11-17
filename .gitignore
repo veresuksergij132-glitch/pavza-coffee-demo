@@ -1,0 +1,14 @@
+# Never commit secrets or runtime databases
+.env
+.env.*
+!.env.example
+.pavza-data/
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.log

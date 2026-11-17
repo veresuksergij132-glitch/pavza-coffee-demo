@@ -1,0 +1,564 @@
+"""PAVZA v3 — small self-hosted demo with persistent SQLite and authenticated administration.
+Run: pip install -r requirements.txt && uvicorn server:app --host 127.0.0.1 --port 8000
+Never use demo content as a live cafe listing without real business details and policies.
+"""
+from __future__ import annotations
+
+import csv
+import hashlib
+import hmac
+import io
+import json
+import os
+import re
+import secrets
+import sqlite3
+import time
+from collections import defaultdict, deque
+from datetime import date, datetime, timedelta
+from urllib.parse import urlsplit
+from pathlib import Path
+from threading import Lock
+from zoneinfo import ZoneInfo
+
+from fastapi import Cookie, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
+
+BASE = Path(__file__).resolve().parent
+DATA = Path(os.getenv('PAVZA_DATA_DIR', str(BASE / '.pavza-data'))).resolve()
+DATA.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA / 'pavza.db'
+LOCAL_ZONE = ZoneInfo(os.getenv('PAVZA_TIMEZONE', 'Europe/Kyiv'))
+# Public demos never collect live visitors' phone numbers by default.
+ALLOW_SUBMISSIONS = os.getenv('PAVZA_ALLOW_SUBMISSIONS', '0') == '1'
+SITE_ENV = os.getenv('PAVZA_SITE_ENV', 'portfolio_demo')
+MENU_IMAGES = {'flat-white.webp', 'cappuccino.webp', 'iced-latte.webp', 'croissant.webp'}
+CATEGORIES = {'coffee', 'cold', 'bakery'}
+SLOTS = [f'{i:02d}:00' for i in range(9, 20)]
+TABLES = [('T1', 2), ('T2', 2), ('T3', 4), ('T4', 4), ('T5', 6)]  # illustrative demo floor plan
+RESERVATION_MINUTES = 90
+app = FastAPI(title='PAVZA API', docs_url=None, redoc_url=None, openapi_url=None)
+
+# A local password is generated once if setup env is omitted; never hardcode it into source or ZIP.
+def save_private(path: Path, value: str):
+    path.write_text(value, encoding='utf-8')
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+SECRET_PATH = DATA / 'session.key'
+if os.getenv('PAVZA_SESSION_SECRET'):
+    SIGNING_KEY = os.environ['PAVZA_SESSION_SECRET'].encode()
+elif SECRET_PATH.exists():
+    SIGNING_KEY = SECRET_PATH.read_bytes()
+else:
+    SIGNING_KEY = secrets.token_bytes(32)
+    SECRET_PATH.write_bytes(SIGNING_KEY)
+    try:
+        SECRET_PATH.chmod(0o600)
+    except OSError:
+        pass
+
+
+def db():
+    cx = sqlite3.connect(DB_PATH, timeout=5, isolation_level=None)
+    cx.row_factory = sqlite3.Row
+    cx.execute('PRAGMA journal_mode=WAL')
+    cx.execute('PRAGMA busy_timeout=5000')
+    cx.execute('PRAGMA foreign_keys=ON')
+    return cx
+
+
+def pbkdf2_hash(password: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260_000).hex()
+
+
+def initialize():
+    with db() as cx:
+        cx.executescript('''
+        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS menu (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL,
+            description TEXT NOT NULL, price INTEGER NOT NULL, image TEXT NOT NULL,
+            badge TEXT NOT NULL DEFAULT '', display_order INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT NOT NULL, rating INTEGER NOT NULL,
+            message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', consent INTEGER NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, guest_name TEXT NOT NULL,
+            guest_phone TEXT NOT NULL, guests INTEGER NOT NULL, note TEXT NOT NULL,
+            visit_date TEXT NOT NULL, visit_time TEXT NOT NULL, table_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_bookings_time ON bookings(visit_date,visit_time,status,table_id);
+        CREATE TABLE IF NOT EXISTS metrics (date TEXT NOT NULL, event TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(date,event));
+        ''')
+        cx.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('session_epoch','0')")
+        if cx.execute('SELECT COUNT(*) FROM menu').fetchone()[0] == 0:
+            items = [
+                ('flat', 'Flat White', 'coffee', 'Подвійне еспресо, шовковисте молоко · 180 мл', 95, 'flat-white.webp', 'Ніжна класика', 0),
+                ('cappuccino', 'Капучино', 'coffee', 'Насичена кава та молочна пінка · 250 мл', 85, 'cappuccino.webp', 'Улюблений', 1),
+                ('iced', 'Iced Latte', 'cold', 'Еспресо, холодне молоко та лід · 300 мл', 105, 'iced-latte.webp', 'Освіжає', 2),
+                ('croissant', 'Мигдальний круасан', 'bakery', 'Хрустка скоринка, мигдаль та ніжна начинка', 110, 'croissant.webp', 'До кави', 3),
+            ]
+            cx.executemany('INSERT INTO menu VALUES (?,?,?,?,?,?,?,?)', items)
+        if not cx.execute("SELECT 1 FROM settings WHERE key='admin_hash'").fetchone():
+            initial_password = os.getenv('PAVZA_ADMIN_PASSWORD', '')
+            generated = not initial_password
+            if generated:
+                initial_password = secrets.token_urlsafe(18)
+            if len(initial_password) < 12:
+                raise RuntimeError('PAVZA_ADMIN_PASSWORD must be at least 12 characters')
+            salt = secrets.token_bytes(16)
+            cx.execute("INSERT INTO settings VALUES('admin_salt',?)", (salt.hex(),))
+            cx.execute("INSERT INTO settings VALUES('admin_hash',?)", (pbkdf2_hash(initial_password,salt),))
+            if generated:
+                path = DATA / 'initial-admin-password.txt'
+                save_private(path, f'ЛОКАЛЬНИЙ ДЕМО-ДОСТУП PAVZA\nLogin: admin\nPassword: {initial_password}\nOnly for this local instance. Do not publish this file.\n')
+                print(f'\nPAVZA: initial admin password saved locally to {path}\n')
+        else:
+            # Environment password isn't a reset mechanism: this prevents silent credential changes.
+            pass
+
+initialize()
+
+# In-memory throttling prevents casual automated requests; use a perimeter rate limiter in production.
+RATE_LOCK = Lock()
+RATE: dict[str, deque] = defaultdict(deque)
+
+def throttle(request: Request, group: str, count: int, span: int):
+    key = f'{group}:{request.client.host if request.client else "unknown"}'
+    with RATE_LOCK:
+        now = time.monotonic()
+        q = RATE[key]
+        while q and q[0] < now-span:
+            q.popleft()
+        if len(q) >= count:
+            raise HTTPException(429, detail='Забагато спроб. Повторіть пізніше.')
+        q.append(now)
+
+
+def utcnow() -> str:
+    return datetime.now(tz=ZoneInfo('UTC')).isoformat(timespec='seconds')
+
+
+def table_available(cx, visit_day: str, visit_time: str, guests: int):
+    target = datetime.strptime(visit_time, '%H:%M')
+    bookings = cx.execute("SELECT visit_time, table_id FROM bookings WHERE visit_date=? AND status IN ('pending','confirmed')", (visit_day,)).fetchall()
+    occupied = set()
+    for b in bookings:
+        old = datetime.strptime(b['visit_time'], '%H:%M')
+        if abs((target - old).total_seconds()) < RESERVATION_MINUTES * 60:
+            occupied.add(b['table_id'])
+    for tid, seats in sorted(TABLES, key=lambda x: x[1]):
+        if seats >= guests and tid not in occupied:
+            return tid
+    return None
+
+
+def date_valid(day: str, visit_time: str|None = None):
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(422, detail='Неправильна дата')
+    today = datetime.now(LOCAL_ZONE).date()
+    if d < today or d > today + timedelta(days=30):
+        raise HTTPException(422, detail='Доступні дати: сьогодні й наступні 30 днів')
+    if visit_time:
+        if visit_time not in SLOTS:
+            raise HTTPException(422, detail='Неприпустимий час')
+        at = datetime.combine(d, datetime.strptime(visit_time, '%H:%M').time(), tzinfo=LOCAL_ZONE)
+        if at < datetime.now(LOCAL_ZONE) + timedelta(minutes=30):
+            raise HTTPException(422, detail='Оберіть час щонайменше за 30 хвилин від зараз')
+    return d
+
+
+class BookingInput(BaseModel):
+    guestName: str = Field(min_length=2, max_length=70)
+    guestPhone: str = Field(min_length=7, max_length=30)
+    visitDate: str
+    visitTime: str
+    guestCount: int = Field(ge=1, le=6)
+    guestNote: str = Field(default='', max_length=120)
+    website: str = ''  # honeypot (must remain empty)
+
+    @field_validator('guestPhone')
+    @classmethod
+    def good_phone(cls, s):
+        if not re.fullmatch(r'[+\d\s()\-]{7,30}', s) or len(re.sub(r'\D','',s)) < 7:
+            raise ValueError('Вкажіть коректний номер телефону')
+        return s
+
+
+class ReviewInput(BaseModel):
+    author: str = Field(min_length=2, max_length=45)
+    rating: int = Field(ge=1, le=5)
+    message: str = Field(min_length=10, max_length=320)
+    consent: bool
+    website: str = ''
+
+
+class MenuInput(BaseModel):
+    id: str = Field(min_length=1, max_length=45)
+    name: str = Field(min_length=2, max_length=65)
+    category: str
+    description: str = Field(min_length=2, max_length=150)
+    price: int = Field(ge=1, le=99999)
+    image: str
+    badge: str = Field(default='', max_length=30)
+
+    @field_validator('category')
+    @classmethod
+    def category_check(cls, s):
+        if s not in CATEGORIES:
+            raise ValueError('Unknown category')
+        return s
+
+    @field_validator('image')
+    @classmethod
+    def image_check(cls, s):
+        if s not in MENU_IMAGES:
+            raise ValueError('Unknown image')
+        return s
+
+    @field_validator('id')
+    @classmethod
+    def id_check(cls, s):
+        if not re.fullmatch(r'[A-Za-z0-9-]{1,45}', s):
+            raise ValueError('Invalid item id')
+        return s
+
+
+class LoginInput(BaseModel):
+    password: str
+
+
+class StatusInput(BaseModel):
+    status: str
+
+
+class PasswordChangeInput(BaseModel):
+    oldPassword: str
+    newPassword: str = Field(min_length=12, max_length=200)
+
+
+def public_menu():
+    with db() as cx:
+        return [dict(row) for row in cx.execute('SELECT id,name,category,description,price,image,badge FROM menu ORDER BY display_order')]
+
+
+@app.get('/api/health')
+def health():
+    try:
+        with db() as cx:
+            cx.execute('SELECT 1').fetchone()
+        return {'ok': True, 'mode': SITE_ENV}
+    except sqlite3.Error:
+        raise HTTPException(503, detail='База даних недоступна')
+
+
+@app.get('/api/config')
+def config():
+    return {'siteMode': SITE_ENV, 'allowSubmissions': ALLOW_SUBMISSIONS,
+            'bookingDurationMinutes': RESERVATION_MINUTES, 'timezone': str(LOCAL_ZONE)}
+
+
+@app.get('/api/menu')
+def get_menu():
+    return {'items': public_menu()}
+
+
+@app.get('/api/reviews')
+def get_reviews():
+    with db() as cx:
+        return {'items': [dict(row) for row in cx.execute("SELECT id,author,rating,message,created_at FROM reviews WHERE status='approved' ORDER BY id DESC LIMIT 20")]}
+
+
+@app.post('/api/reviews', status_code=201)
+def create_review(data: ReviewInput, request: Request):
+    if not ALLOW_SUBMISSIONS:
+        raise HTTPException(403, detail='Це публічне демо. Надсилання відгуків наразі вимкнено.')
+    throttle(request, 'review', 4, 3600)
+    if data.website or not data.consent:
+        raise HTTPException(422, detail='Потрібна згода на публікацію після модерації')
+    now = utcnow()
+    with db() as cx:
+        cur = cx.execute('INSERT INTO reviews(author,rating,message,status,consent,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+            (data.author.strip(),data.rating,data.message.strip(),'pending',1,now,now))
+        return {'id':cur.lastrowid,'status':'pending','message':'Відгук надіслано на модерацію'}
+
+
+@app.get('/api/availability')
+def availability(visitDate: str, guestCount: int):
+    if guestCount < 1 or guestCount > 6:
+        raise HTTPException(422, detail='Кількість гостей: 1–6')
+    date_valid(visitDate)
+    with db() as cx:
+        return {'date':visitDate,'guests':guestCount,'slots':[{'time':t,'available':bool(table_available(cx,visitDate,t,guestCount)) and is_future(visitDate,t)} for t in SLOTS], 'timezone':str(LOCAL_ZONE)}
+
+
+def is_future(day: str, slot: str):
+    return datetime.combine(date.fromisoformat(day),datetime.strptime(slot,'%H:%M').time(),tzinfo=LOCAL_ZONE) >= datetime.now(LOCAL_ZONE)+timedelta(minutes=30)
+
+
+@app.post('/api/bookings', status_code=201)
+def create_booking(data: BookingInput, request: Request):
+    if not ALLOW_SUBMISSIONS:
+        raise HTTPException(403, detail='Це публічне демо. Надсилання бронювань наразі вимкнено.')
+    throttle(request,'booking',5,3600)
+    if data.website:
+        raise HTTPException(422, detail='Не вдалося обробити запит')
+    date_valid(data.visitDate,data.visitTime)
+    now = utcnow()
+    cx = db()
+    try:
+        cx.execute('BEGIN IMMEDIATE')
+        table_id = table_available(cx, data.visitDate, data.visitTime, data.guestCount)
+        if not table_id:
+            cx.rollback()
+            raise HTTPException(409, detail='На цей час немає вільного столика. Спробуйте інший час.')
+        cur = cx.execute('INSERT INTO bookings(guest_name,guest_phone,guests,note,visit_date,visit_time,table_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (data.guestName.strip(), data.guestPhone.strip(),data.guestCount,data.guestNote.strip(),data.visitDate,data.visitTime,table_id,'pending',now,now))
+        cx.commit()
+        return {'id':cur.lastrowid,'status':'pending','message':'Запит зареєстровано. Це демонстраційний сайт: бронювання не підтверджене реальним закладом.'}
+    except:
+        if cx.in_transaction:
+            cx.rollback()
+        raise
+    finally:
+        cx.close()
+
+
+@app.post('/api/events')
+async def events(request: Request):
+    throttle(request,'metrics',90,60)
+    body = await request.json()
+    event = body.get('event') if isinstance(body,dict) else None
+    if event not in {'page_view','menu_view','booking_click','review_click','booking_request'}:
+        raise HTTPException(422,detail='Неприпустима подія')
+    d = datetime.now(LOCAL_ZONE).date().isoformat()
+    with db() as cx:
+        cx.execute('INSERT INTO metrics(date,event,count) VALUES(?,?,1) ON CONFLICT(date,event) DO UPDATE SET count=count+1',(d,event))
+    return {'ok':True}
+
+
+def current_session_epoch() -> int:
+    with db() as cx:
+        return int(cx.execute("SELECT value FROM settings WHERE key='session_epoch'").fetchone()[0])
+
+
+def create_token():
+    expires = int(time.time()) + 3600 * 8
+    raw = f'admin:{expires}:{current_session_epoch()}:{secrets.token_hex(12)}'
+    sig = hmac.new(SIGNING_KEY, raw.encode(), hashlib.sha256).hexdigest()
+    return f'{raw}:{sig}'
+
+
+def verify_token(token: str | None):
+    if not token:
+        return False
+    parts = token.split(':')
+    if len(parts)!=5 or parts[0]!='admin':
+        return False
+    raw = ':'.join(parts[:4])
+    sig = hmac.new(SIGNING_KEY, raw.encode(), hashlib.sha256).hexdigest()
+    try:
+        return (int(parts[1]) > time.time()
+                and int(parts[2]) == current_session_epoch()
+                and hmac.compare_digest(sig,parts[4]))
+    except (ValueError, sqlite3.Error):
+        return False
+
+
+def csrf_value(token: str):
+    return hmac.new(SIGNING_KEY,('csrf:'+token).encode(),hashlib.sha256).hexdigest()
+
+
+def require_admin(request: Request, csrf: bool = False):
+    session = request.cookies.get('pavza_session')
+    if not verify_token(session):
+        raise HTTPException(401, detail='Увійдіть в адмінпанель')
+    if csrf:
+        supplied = request.headers.get('X-PAVZA-CSRF','')
+        if not hmac.compare_digest(supplied,csrf_value(session)):
+            raise HTTPException(403,detail='Неправильний токен захисту')
+        # Compare browser Origin hostname with the actual Host: works behind HTTPS ingress
+        # without trusting client-controlled X-Forwarded-Proto for CSRF decisions.
+        origin = request.headers.get('Origin')
+        if origin:
+            parsed = urlsplit(origin)
+            if parsed.scheme not in ('http','https') or parsed.netloc.lower() != request.headers.get('host','').lower():
+                raise HTTPException(403,detail='Невірне походження запиту')
+
+
+@app.post('/api/admin/login')
+def login(data: LoginInput,request: Request,response: Response):
+    throttle(request,'login',8,900)
+    with db() as cx:
+        salt = bytes.fromhex(cx.execute("SELECT value FROM settings WHERE key='admin_salt'").fetchone()[0])
+        expected = cx.execute("SELECT value FROM settings WHERE key='admin_hash'").fetchone()[0]
+    if not hmac.compare_digest(pbkdf2_hash(data.password,salt),expected):
+        raise HTTPException(401,detail='Невірний пароль')
+    token = create_token()
+    secure = request.url.scheme == 'https' or request.headers.get('x-forwarded-proto') == 'https'
+    response.set_cookie('pavza_session',token,httponly=True,secure=secure,samesite='lax',max_age=8*3600,path='/')
+    return {'authenticated':True,'csrf':csrf_value(token)}
+
+
+@app.post('/api/admin/change-password')
+def change_password(data: PasswordChangeInput, request: Request, response: Response):
+    require_admin(request, csrf=True)
+    throttle(request,'password_change',4,900)
+    if data.oldPassword == data.newPassword:
+        raise HTTPException(422,detail='Новий пароль повинен відрізнятися від старого')
+    with db() as cx:
+        cx.execute('BEGIN IMMEDIATE')
+        salt = bytes.fromhex(cx.execute("SELECT value FROM settings WHERE key='admin_salt'").fetchone()[0])
+        expected = cx.execute("SELECT value FROM settings WHERE key='admin_hash'").fetchone()[0]
+        if not hmac.compare_digest(pbkdf2_hash(data.oldPassword,salt),expected):
+            raise HTTPException(401,detail='Поточний пароль невірний')
+        new_salt = secrets.token_bytes(16)
+        cx.execute("UPDATE settings SET value=? WHERE key='admin_salt'",(new_salt.hex(),))
+        cx.execute("UPDATE settings SET value=? WHERE key='admin_hash'",(pbkdf2_hash(data.newPassword,new_salt),))
+        cx.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='session_epoch'")
+        cx.commit()
+    # Revoke every previous session after password rotation.
+    response.delete_cookie('pavza_session',path='/')
+    return {'ok':True,'message':'Пароль змінено. Увійдіть знову.'}
+
+
+@app.get('/api/admin/session')
+def session(request: Request):
+    token = request.cookies.get('pavza_session')
+    return {'authenticated':verify_token(token),'csrf':csrf_value(token) if verify_token(token) else None}
+
+
+@app.post('/api/admin/logout')
+def logout(request: Request,response: Response):
+    require_admin(request,csrf=True)
+    response.delete_cookie('pavza_session',path='/')
+    return {'ok':True}
+
+
+@app.get('/api/admin/overview')
+def overview(request: Request):
+    require_admin(request)
+    with db() as cx:
+        return {'bookings': [dict(x) for x in cx.execute('SELECT id,guest_name,guest_phone,guests,note,visit_date,visit_time,table_id,status,created_at FROM bookings ORDER BY visit_date DESC, visit_time DESC LIMIT 100')],
+            'reviews': [dict(x) for x in cx.execute('SELECT id,author,rating,message,status,created_at FROM reviews ORDER BY id DESC LIMIT 100')],
+            'metrics':[dict(x) for x in cx.execute("SELECT event,SUM(count) AS count FROM metrics GROUP BY event ORDER BY event")],
+            'menu':public_menu()}
+
+
+@app.put('/api/admin/menu')
+def update_menu(items: list[MenuInput],request: Request):
+    require_admin(request,csrf=True)
+    if not 1<=len(items)<=30 or len({x.id for x in items})!=len(items):
+        raise HTTPException(422,detail='Від 1 до 30 позицій, ID без повторів')
+    with db() as cx:
+        cx.execute('BEGIN IMMEDIATE')
+        cx.execute('DELETE FROM menu')
+        cx.executemany('INSERT INTO menu(id,name,category,description,price,image,badge,display_order) VALUES(?,?,?,?,?,?,?,?)',
+            [(x.id,x.name.strip(),x.category,x.description.strip(),x.price,x.image,x.badge.strip(),i) for i,x in enumerate(items)])
+        cx.commit()
+    return {'ok':True}
+
+
+@app.patch('/api/admin/reviews/{review_id}')
+def update_review(review_id:int,data:StatusInput,request:Request):
+    require_admin(request,csrf=True)
+    if data.status not in {'approved','rejected','pending'}:
+        raise HTTPException(422,detail='Невірний статус')
+    with db() as cx:
+        cur = cx.execute('UPDATE reviews SET status=?,updated_at=? WHERE id=?',(data.status,utcnow(),review_id))
+        if not cur.rowcount:
+            raise HTTPException(404,detail='Відгук не знайдено')
+    return {'ok':True}
+
+
+@app.delete('/api/admin/reviews/{review_id}')
+def delete_review(review_id: int, request: Request):
+    require_admin(request, csrf=True)
+    with db() as cx:
+        cur=cx.execute('DELETE FROM reviews WHERE id=?',(review_id,))
+        if not cur.rowcount:
+            raise HTTPException(404, detail='Відгук не знайдено')
+    return {'ok':True}
+
+
+@app.patch('/api/admin/bookings/{booking_id}')
+def update_booking(booking_id:int,data:StatusInput,request:Request):
+    require_admin(request,csrf=True)
+    if data.status not in {'confirmed','rejected','cancelled','pending'}:
+        raise HTTPException(422,detail='Невірний статус')
+    cx = db()
+    try:
+        cx.execute('BEGIN IMMEDIATE')
+        row=cx.execute('SELECT * FROM bookings WHERE id=?',(booking_id,)).fetchone()
+        if not row:
+            raise HTTPException(404,detail='Запит не знайдено')
+        if data.status in {'pending','confirmed'} and row['status'] not in {'pending','confirmed'}:
+            tid=table_available(cx,row['visit_date'],row['visit_time'],row['guests'])
+            if not tid:
+                raise HTTPException(409,detail='Столик на цей час уже зайнятий')
+            cx.execute('UPDATE bookings SET table_id=? WHERE id=?',(tid,booking_id))
+        cx.execute('UPDATE bookings SET status=?,updated_at=? WHERE id=?',(data.status,utcnow(),booking_id))
+        cx.commit()
+        return {'ok':True}
+    except:
+        if cx.in_transaction:
+            cx.rollback()
+        raise
+    finally:
+        cx.close()
+
+
+@app.delete('/api/admin/bookings/{booking_id}')
+def delete_booking(booking_id:int, request:Request):
+    require_admin(request,csrf=True)
+    with db() as cx:
+        cur=cx.execute('DELETE FROM bookings WHERE id=?',(booking_id,))
+        if not cur.rowcount:
+            raise HTTPException(404,detail='Запит не знайдено')
+    return {'ok':True}
+
+
+@app.get('/api/admin/bookings.csv')
+def export_booking(request:Request):
+    require_admin(request)
+    out=io.StringIO()
+    writer=csv.writer(out)
+    cols=['id','guest_name','guest_phone','guests','visit_date','visit_time','status','note']
+    writer.writerow(cols)
+    with db() as cx:
+        for row in cx.execute('SELECT '+','.join(cols)+' FROM bookings ORDER BY visit_date DESC'):
+            writer.writerow(['\''+str(row[k]) if str(row[k]).startswith(('=','+','-','@')) else row[k] for k in cols])
+    payload=out.getvalue().encode('utf-8-sig')
+    return Response(content=payload,media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="pavza-bookings.csv"','Cache-Control':'no-store'})
+
+
+@app.middleware('http')
+async def privacy_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='strict-origin-when-cross-origin'
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
+    response.headers['Content-Security-Policy']=("default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'")
+    response.headers['X-Robots-Tag']='noindex, nofollow' if SITE_ENV=='portfolio_demo' else 'index, follow'
+    if request.url.path.startswith('/api/') or request.url.path.startswith('/admin'):
+        response.headers['Cache-Control']='no-store'
+    return response
+
+
+# Keep static mount last so /api/* and /api/admin/* always resolve to authenticated endpoints.
+app.mount('/',StaticFiles(directory=BASE / 'public',html=True),name='static')

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#221711">
+  <meta name="robots" content="noindex,nofollow">
+  <title>PAVZA — Смакуй момент | Specialty Coffee & Bakery</title>
+  <meta name="description" content="PAVZA — простір для кави, розмов і маленьких пауз. Ознайомтесь із меню та відкрийте для себе нашу атмосферу.">
+  <meta property="og:type" content="website"><meta property="og:title" content="PAVZA — Смакуй момент"><meta property="og:description" content="Кава, яку пам'ятають. Простір, у який повертаються.">
+  <meta property="og:image" content="assets/pavza-interior.webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="assets/pavza-interior.webp" media="(min-width:701px)">
+  <link rel="preload" as="image" href="assets/pavza-mobile.webp" media="(max-width:700px)">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="site.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#menu">Перейти до меню</a>
+  <header class="header" id="top">
+    <div class="container nav-row">
+      <a href="#top" class="wordmark" aria-label="PAVZA, головна">PAVZA<span>.</span><small>SPECIALTY COFFEE & BAKERY</small></a>
+      <nav class="desktop-nav" aria-label="Основна навігація"><a href="#menu">Меню</a><a href="#space">Наш простір</a><a href="#reviews">Відгуки</a><a href="#contacts">Контакти</a></nav>
+      <a class="nav-reserve" href="#booking">Забронювати <span aria-hidden="true">↗</span></a>
+      <button class="mobile-toggle" id="mobileToggle" type="button" aria-expanded="false" aria-controls="mobileNav" aria-label="Відкрити меню"><span></span><span></span></button>
+    </div>
+    <nav class="mobile-nav" id="mobileNav" aria-label="Мобільна навігація" hidden><a href="#menu">Меню</a><a href="#space">Наш простір</a><a href="#reviews">Відгуки</a><a href="#booking">Бронювання</a><a href="#contacts">Контакти</a></nav>
+  </header>
+  <div id="demoNotice" class="demo-notice" hidden role="status">PAVZA — концепт для портфоліо VERES DESIGN. Реальні бронювання та відгуки поки не приймаються.</div>
+  <main>
+    <section class="hero" aria-labelledby="heroTitle">
+      <picture><source media="(max-width:700px)" srcset="assets/pavza-mobile.webp"><img class="hero-poster" src="assets/pavza-interior.webp" width="1672" height="941" alt="Затверджений інтер'єр PAVZA: дубові столики, природне світло та барна стійка" fetchpriority="high"></picture>
+      <video class="hero-motion" id="heroMotion" autoplay muted loop playsinline preload="none" aria-hidden="true" poster="assets/pavza-interior.webp"><source src="assets/pavza-photo-motion.mp4" type="video/mp4"></video>
+      <div class="hero-shade"></div><div class="hero-ambient" aria-hidden="true"></div>
+      <div class="container hero-layout">
+        <div class="hero-content">
+          <p class="eyebrow"><span class="tiny-line"></span> ТУТ ЧАС ІДЕ ТРОХИ ПОВІЛЬНІШЕ</p>
+          <h1 id="heroTitle" class="hero-title">Смакуй<br><em>момент<span class="period">.</span></em><svg class="underline" viewBox="0 0 500 24" preserveAspectRatio="none" aria-hidden="true"><path d="M8 17 Q160 -3 317 13 T491 7" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/></svg></h1>
+          <p class="hero-lead">Добра кава. Тепла випічка. Розмови без поспіху.<br>Місце, куди хочеться повернутися.</p>
+          <div class="hero-buttons"><a class="button button-solid" href="#menu">Переглянути меню <span aria-hidden="true">↗</span></a><a class="button button-outline" href="#booking">Забронювати столик <span aria-hidden="true">↗</span></a></div>
+          <div class="hero-meta"><span class="pulse-dot"></span> PAVZA · НАША ІСТОРІЯ ПОЧИНАЄТЬСЯ ТУТ</div>
+        </div>
+        <div class="hero-stamp" aria-hidden="true"><span>coffee &amp;<br>good moments</span><span class="stamp-star">✳</span></div>
+      </div>
+      <div class="container hero-bottom"><a href="#menu" class="scroll-invite">ГОРТАЙ, ЩОБ ВІДЧУТИ АТМОСФЕРУ <span class="line"></span></a><div class="hero-count"><strong>01</strong><span>/</span>05 <i></i><i></i><i></i></div></div>
+    </section>
+
+    <section class="quickline" aria-label="Переваги PAVZA"><div class="container quickline-row"><span>КАВА З ХАРАКТЕРОМ <b>✳</b></span><span>СВІЖА ВИПІЧКА <b>✳</b></span><span>МІСЦЕ ДЛЯ СВОЇХ <b>✳</b></span><span>КОЖНА ПАУЗА ВАРТА СМАКУ</span></div></section>
+
+    <section class="section menu-section" id="menu" aria-labelledby="menuTitle">
+      <div class="container">
+        <div class="section-heading reveal"><div><span class="overline"><span>01</span> / МЕНЮ PAVZA</span><h2 id="menuTitle">Обери свою<br><em>маленьку паузу.</em></h2></div><p>Знайома класика, трохи натхнення та справжній смак. Перегортай, обирай — решту залиш нам.</p></div>
+        <div class="menu-tools"><div class="menu-tabs" role="group" aria-label="Категорії меню"><button type="button" class="tab active" data-category="all" aria-pressed="true">Усе меню</button><button type="button" class="tab" data-category="coffee" aria-pressed="false">Кава</button><button type="button" class="tab" data-category="cold" aria-pressed="false">Холодні напої</button><button type="button" class="tab" data-category="bakery" aria-pressed="false">Випічка</button></div><div class="rail-controls"><button type="button" id="prevMenu" aria-label="Попередні позиції">←</button><button type="button" id="nextMenu" aria-label="Наступні позиції">→</button></div></div>
+        <div class="menu-rail" id="menuRail" tabindex="0" aria-label="Карусель меню"></div>
+        <div class="menu-foot"><p><span class="menu-note-dot"></span> Демонстраційне меню. Назви, склад і ціни уточнюємо перед запуском закладу.</p><span>СМАЧНО У КОЖНІЙ ДЕТАЛІ · PAVZA</span></div>
+      </div>
+    </section>
+
+    <section class="story-band" id="space" aria-labelledby="spaceTitle">
+      <div class="container story-grid">
+        <div class="story-photo"><img src="assets/pavza-interior.webp" width="1672" height="941" loading="lazy" alt="Єдиний погоджений інтер'єр кав'ярні PAVZA"><div class="photo-caption">01 — СВІТЛО, ДЕРЕВО, КАВА</div></div>
+        <div class="story-text reveal"><span class="overline light"><span>02</span> / НАШ ПРОСТІР</span><h2 id="spaceTitle">Місце, в якому<br>можна <em>не поспішати.</em></h2><p>Великі вікна, тепле дерево, улюблена чашка та розмови, яким не потрібен таймер. PAVZA — про прості речі, з яких складається хороший день.</p><div class="story-quote"><span class="quote-mark">“</span><span>Найкращі моменти трапляються, коли даєш собі трохи часу.</span></div><a href="#booking" class="text-link">Залишитися на каву <span>↗</span></a></div>
+      </div>
+    </section>
+
+    <section class="section ritual-section" aria-labelledby="ritualTitle"><div class="container ritual-grid"><div class="reveal"><span class="overline"><span>03</span> / НАШІ ДРІБНИЦІ</span><h2 id="ritualTitle">Хороший ранок<br>починається <em>тут.</em></h2><p>Ми цінуємо не лише смак — а й усе, що його оточує: світло на столі, аромат зерна, перший ковток без поспіху.</p><a class="text-link dark-link" href="#menu">Знайти свій напій <span>↗</span></a></div><div class="ritual-collage"><img src="assets/flat-white.webp" alt="Flat White у керамічній чашці" loading="lazy"><img src="assets/croissant.webp" alt="Мигдальний круасан на дерев'яному столику" loading="lazy"><span class="ritual-caption">made for slow moments.</span></div></div></section>
+
+    <section class="section reviews-section" id="reviews" aria-labelledby="reviewsTitle"><div class="container"><div class="section-heading reveal"><div><span class="overline"><span>04</span> / ГОВОРЯТЬ ГОСТІ</span><h2 id="reviewsTitle">У кожного своя<br><em>історія з PAVZA.</em></h2></div><p>Ми не вигадуємо історій. Тут з'являтимуться тільки реальні відгуки, які гості дозволили опублікувати.</p></div><div id="reviewList" class="review-grid" aria-live="polite"></div><button type="button" class="button button-dark" id="openReview">Залишити відгук <span aria-hidden="true">↗</span></button><p class="section-aside">Відгуки зберігаються на локальному сервері та з’являються після перевірки адміністратора. Це демонстраційний заклад.</p></div></section>
+
+    <section class="booking-section" id="booking" aria-labelledby="bookingTitle"><div class="container booking-grid"><div class="booking-text reveal"><span class="overline"><span>05</span> / БРОНЮВАННЯ</span><h2 id="bookingTitle">Цей столик<br>може бути <em>твоїм.</em></h2><p>Плануєш зустріч або хочеш тихо посидіти з кавою? Обери зручну дату й час. Залиш запит на столик. У цій демонстрації його збережено на локальному сервері, але реальний заклад не підтверджує бронювання.</p><div class="booking-decoration"><span>✳</span><span>TAKE YOUR TIME</span><span class="booking-dash"></span></div></div><form id="bookingForm" class="booking-form"><div class="form-top"><h3>Твоя маленька пауза</h3><span class="form-counter">01 / BOOKING</span></div><div class="form-fields"><label>Ім'я <input name="guestName" autocomplete="name" required maxlength="70" placeholder="Як до тебе звертатися?"></label><label>Телефон <input name="guestPhone" inputmode="tel" autocomplete="tel" type="tel" required minlength="7" maxlength="30" placeholder="+380 ..."></label><label>Дата <input name="visitDate" id="visitDate" required type="date"></label><label>Час <select name="visitTime" required><option value="">Оберіть час</option><option>09:00</option><option>10:00</option><option>11:00</option><option>12:00</option><option>13:00</option><option>14:00</option><option>15:00</option><option>16:00</option><option>17:00</option><option>18:00</option><option>19:00</option></select></label><label>Кількість гостей <select name="guestCount"><option value="1">1 гість</option><option value="2" selected>2 гості</option><option value="3">3 гості</option><option value="4">4 гості</option><option value="5">5 гостей</option><option value="6">6 гостей</option></select></label><label>Побажання <input name="guestNote" maxlength="120" placeholder="За бажанням"></label></div><p id="availabilityHint" class="availability-hint" aria-live="polite">Обери дату, щоб перевірити наявність столиків.</p><button class="submit-booking" type="submit">Надіслати запит <span>↗</span></button><div class="form-feedback" id="bookingFeedback" role="status">Деморежим: запити зберігаються локально. Жодного бронювання в реальному закладі.</div></form></div></section>
+  </main>
+  <footer class="footer" id="contacts"><div class="container"><div class="footer-head"><div><a href="#top" class="wordmark footer-brand">PAVZA<span>.</span><small>SPECIALTY COFFEE & BAKERY</small></a><p>Найкращі речі не потрібно квапити.</p></div><div class="footer-contact"><span>ЗАВІТАЙ У ГОСТІ</span><p>Адресу, години роботи та контакти<br>внесемо після погодження власника.</p><a href="#booking">Попередній запит на столик ↗</a></div></div><div class="footer-base"><span>© 2026 PAVZA · концепт для портфоліо VERES DESIGN</span><a href="privacy.html" class="admin-link">Конфіденційність ↗</a><a href="admin.html" class="admin-link">Керування ↗</a><button type="button" id="privacyOptions" class="admin-link link-button">Аналітика / згода</button><span>З любов'ю до деталей.</span></div></div></footer>
+  <dialog id="reviewDialog" class="review-dialog" aria-labelledby="dialogTitle"><form id="reviewForm"><button class="close-dialog" type="button" id="closeReview" aria-label="Закрити">×</button><span class="overline"><span>✳</span> / ТВОЯ ІСТОРІЯ</span><h2 id="dialogTitle">Як тобі PAVZA?</h2><p>Залиш короткий відгук для демонстрації роботи модерації.</p><label>Ім'я <input name="author" required maxlength="45" placeholder="Ім'я або псевдонім"></label><label>Оцінка <select name="rating" required><option value="5">★★★★★ — 5</option><option value="4">★★★★☆ — 4</option><option value="3">★★★☆☆ — 3</option><option value="2">★★☆☆☆ — 2</option><option value="1">★☆☆☆☆ — 1</option></select></label><label>Відгук <textarea name="message" required minlength="10" maxlength="320" rows="4" placeholder="Розкажи про враження..."></textarea></label><label class="consent"><input name="consent" type="checkbox" required><span>Даю згоду на збереження і публікацію мого імені та відгуку після модерації.</span></label><button type="submit" class="submit-booking">Надіслати на перевірку ↗</button><p class="dialog-note" id="reviewNotice" role="status">Відгук буде надіслано на демонстраційний сервер і показано лише після модерації.</p></form></dialog>
+<aside id="analyticsConsent" class="privacy-banner" aria-label="Вибір аналітики" hidden><div><strong>Ваші дані — під контролем.</strong><p>Ми збираємо лише агреговані події, і тільки за вашою згодою. Сторонніх рекламних трекерів тут немає. <a href="privacy.html">Детальніше</a></p></div><div class="privacy-actions"><button type="button" id="analyticsNo">Лише необхідне</button><button type="button" id="analyticsYes">Дозволити аналітику</button></div></aside></body>
+</html>

@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+.pavza-data/
+.env
+.git/
+*.sqlite
+*.db
+*.zip
+venv/
+.venv/
+tests/
