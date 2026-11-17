@@ -193,3 +193,17 @@
 @media(max-width:800px){.hero-editorial .hero-detail{right:5%;bottom:18px;width:155px;transform:rotate(3deg);}.hero-editorial .hero-photo-wordmark{bottom:62px}.services-grid{grid-template-columns:1fr 1fr;gap:15px}.service-tile{min-height:380px}}
 @media(max-width:560px){.hero-editorial .hero-detail{right:6%;bottom:10px;width:100px;padding:4px 4px 0}.hero-editorial .hero-detail img{height:calc(100% - 22px)}.hero-editorial .hero-detail figcaption{font-size:5px;padding:7px 3px}.hero-editorial .hero-detail figcaption span{font-size:10px}.hero-editorial .hero-motion{display:block!important}.hero-editorial .hero-photo-wordmark{bottom:22px;left:4%;font-size:18vw}.services-grid{grid-template-columns:1fr}.service-tile{min-height:420px}}
 @media(prefers-reduced-motion:reduce){.hero-detail,.service-tile img{transition:none!important}}
+
+/* PAVZA 6.1 — owner-provided real-scale wide interior photography */
+.gallery-panorama{position:relative;min-height:370px;height:clamp(380px,43vw,680px);overflow:hidden;isolation:isolate;background:#352319;color:#fff3e1}
+.gallery-panorama>img{position:absolute;width:100%;height:100%;object-fit:cover;object-position:center center;inset:0;transition:transform 1.2s cubic-bezier(.16,1,.3,1)}
+.gallery-panorama:hover>img{transform:scale(1.025)}
+.gallery-panorama-shade{position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,rgba(22,15,11,.72),rgba(31,19,13,.27) 53%,rgba(22,13,7,.15) 100%),linear-gradient(0deg,rgba(18,11,7,.35),transparent 62%)}
+.gallery-panorama-inner{position:absolute;left:max(6vw,25px);top:50%;transform:translateY(-50%);z-index:2;width:min(670px,70vw)}
+.gallery-panorama-label,.gallery-panorama-index{font:700 10px/1.4 'Manrope',sans-serif;letter-spacing:.24em;color:#ecd2b4}
+.gallery-panorama h2{font:500 clamp(49px,6.3vw,105px)/.95 'Cormorant Garamond',Georgia,serif;letter-spacing:-.044em;margin:25px 0 22px;text-wrap:balance}
+.gallery-panorama h2 em{color:#eec19b}
+.gallery-panorama p{font:400 clamp(13px,1.35vw,18px)/1.65 'Manrope',sans-serif;color:#f3e5d4}
+.gallery-panorama-index{position:absolute;bottom:27px;right:5%;z-index:2;font-size:9px}
+@media(max-width:700px){.gallery-panorama{height:500px}.gallery-panorama>img{object-position:52% center}.gallery-panorama-shade{background:linear-gradient(90deg,rgba(19,10,4,.73),rgba(18,12,8,.12)),linear-gradient(0deg,#22110d70,transparent)}.gallery-panorama-inner{width:86vw}.gallery-panorama h2{font-size:clamp(64px,14vw,88px)}.gallery-panorama-index{font-size:7px}}
+@media(max-width:560px){.hero-editorial .hero-photo .hero-motion{display:block;object-position:58% center}}

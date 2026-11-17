@@ -15,6 +15,8 @@ def test_media_permissions_and_persistence():
     before=client.get('/api/content').json()
     assert before['hero']['titleTop']=='Усе'
     assert len(before['services'])==3
+    assert before['hero']['spaceImage']=='assets/pavza-gallery-wide.webp'
+    assert client.get('/assets/pavza-gallery-wide.webp').status_code==200
     assert client.get('/api/admin/media').status_code==401
     assert client.put('/api/admin/hero',json=before['hero']).status_code==401
     auth=client.post('/api/admin/login',json={'password':'S3cureDemoPassphrase!2026'})

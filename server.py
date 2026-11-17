@@ -42,7 +42,7 @@ MENU_IMAGES = {'flat-white.webp', 'cappuccino.webp', 'iced-latte.webp', 'croissa
 MEDIA_DIR = DATA / 'media'
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 MEDIA_LIMITS = {'image': 12 * 1024 * 1024, 'video': 80 * 1024 * 1024}
-STATIC_IMAGES = {'assets/pavza-interior.webp','assets/pavza-mobile.webp','assets/pavza-editorial-detail.webp','assets/flat-white.webp','assets/cappuccino.webp','assets/iced-latte.webp','assets/croissant.webp'}
+STATIC_IMAGES = {'assets/pavza-interior.webp','assets/pavza-mobile.webp','assets/pavza-editorial-detail.webp','assets/pavza-gallery-wide.webp','assets/flat-white.webp','assets/cappuccino.webp','assets/iced-latte.webp','assets/croissant.webp'}
 STATIC_VIDEOS = {'assets/pavza-photo-motion.mp4'}
 CATEGORIES = {'coffee', 'cold', 'bakery'}
 SLOTS = [f'{i:02d}:00' for i in range(9, 20)]
@@ -252,7 +252,8 @@ DEFAULT_CONTENT = {
         'description':'Крім миті з доброю кавою. Заходь по свій час — повільний, теплий і справжній.',
         'poster':'assets/pavza-interior.webp',
         'video':'assets/pavza-photo-motion.mp4',
-        'detailImage':'assets/pavza-editorial-detail.webp'
+        'detailImage':'assets/pavza-editorial-detail.webp',
+        'spaceImage':'assets/pavza-gallery-wide.webp'
     },
     'services': [
         {'title':'Specialty кава','description':'Ароматні зерна, точна екстракція та смак із характером.','image':'assets/flat-white.webp'},
@@ -279,8 +280,9 @@ class HeroInput(BaseModel):
     poster: str
     video: str
     detailImage: str
+    spaceImage: str = 'assets/pavza-gallery-wide.webp'
 
-    @field_validator('poster','detailImage')
+    @field_validator('poster','detailImage','spaceImage')
     @classmethod
     def image_ok(cls,v):
         if not is_approved_media(v,'image'): raise ValueError('Оберіть доступне фото з медіатеки')

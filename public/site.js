@@ -60,6 +60,7 @@ async function loadContent(){
     }
     if(h.poster){const poster=$('.hero-poster');if(poster)poster.src=resolveImage(h.poster);if(motion)motion.poster=resolveImage(h.poster)}
     if(h.detailImage){const img=$('#heroDetailImage');if(img)img.src=resolveImage(h.detailImage)}
+    if(h.spaceImage){const img=$('#spaceGalleryImage');if(img)img.src=resolveImage(h.spaceImage)}
     if(motion){const source=$('#heroVideoSource');if(source){const target=h.video||'';if(target){source.src=resolveImage(target);source.type=target.endsWith('.webm')?'video/webm':'video/mp4';motion.hidden=false;motion.load();if(!window.matchMedia('(prefers-reduced-motion:reduce)').matches&&!navigator.connection?.saveData)motion.play().catch(()=>{});}else{motion.pause();motion.hidden=true}}}
     const grid=$('#servicesGrid');if(grid){grid.replaceChildren();const services=data.services||[];
       if(!services.length){grid.append(el('p','service-empty','Послуги ще не додано.'));return}
