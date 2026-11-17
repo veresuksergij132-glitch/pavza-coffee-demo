@@ -9,3 +9,15 @@
 .admin-security label{font-weight:800;font-size:12px;display:grid;gap:8px}
 .admin-security input{width:100%;padding:13px;border:1px solid #c9b19f;border-radius:7px;background:#fff}
 .admin-security button{justify-self:start;padding:13px 24px;border:0;background:#382517;color:#fff;font-weight:800;border-radius:30px}
+
+/* v6 content studio */
+.content-edit-form{display:grid;gap:18px;padding:24px;background:#fff;border:1px solid #e2d3c5;border-radius:12px;max-width:980px}
+.content-edit-form label,.media-upload label,.service-fields label{display:grid;gap:7px;font-size:12px;color:#6d513e;font-weight:800}
+.content-edit-form input,.content-edit-form select,.content-edit-form textarea,.media-upload input,.service-fields input,.service-fields textarea,.service-fields select{min-width:0;width:100%;border:1px solid #d5bea8;border-radius:8px;padding:12px 13px;background:#fff;font:500 13px/1.5 Manrope,sans-serif;color:#352519}
+.content-edit-form input:focus,.content-edit-form textarea:focus{border-color:#9e6943}
+.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.media-upload{display:flex;gap:18px;align-items:end;flex-wrap:wrap;padding:22px;background:#fff;border:1px dashed #bfa68d;border-radius:12px;margin:24px 0}.media-upload label{flex:1;min-width:260px}
+.media-library{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:15px;margin-top:20px}
+.media-item{background:#fff;padding:9px;border-radius:10px;box-shadow:0 5px 20px #39251a12;border:1px solid #d8c5b2}.media-item img,.media-item video{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:5px;background:#2f2118}.media-item>div{display:flex;justify-content:space-between;gap:10px;padding:9px 2px}.media-item strong,.media-item small{font-size:10px;color:#876547}.media-item button{border:0;background:#eee3d7;border-radius:8px;font-size:10px;padding:10px;color:#593d2c;width:100%;cursor:pointer}
+.service-editor{display:grid;gap:15px}.service-edit-card{display:grid;grid-template-columns:180px 1fr;gap:22px;background:#fff;border:1px solid #dfcfbc;border-radius:12px;padding:17px}.service-preview{width:180px;height:200px;object-fit:cover;border-radius:7px}.service-fields{display:grid;gap:12px}.service-fields button{justify-self:start;background:#efded2;border:0;border-radius:30px;padding:10px 15px;cursor:pointer}
+@media(max-width:740px){.edit-grid{grid-template-columns:1fr}.service-edit-card{grid-template-columns:90px 1fr;gap:12px;padding:12px}.service-preview{width:90px;height:115px}.content-edit-form{padding:15px}}

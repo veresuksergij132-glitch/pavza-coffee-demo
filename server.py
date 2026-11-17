@@ -5,6 +5,10 @@ Never use demo content as a live cafe listing without real business details and 
 from __future__ import annotations
 
 import csv
+import logging
+import threading
+from urllib.request import Request as URLRequest, urlopen
+from urllib.parse import urlparse
 import hashlib
 import hmac
 import io
@@ -21,8 +25,8 @@ from pathlib import Path
 from threading import Lock
 from zoneinfo import ZoneInfo
 
-from fastapi import Cookie, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import Cookie, FastAPI, Header, HTTPException, Request, Response, UploadFile, File
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +39,11 @@ LOCAL_ZONE = ZoneInfo(os.getenv('PAVZA_TIMEZONE', 'Europe/Kyiv'))
 ALLOW_SUBMISSIONS = os.getenv('PAVZA_ALLOW_SUBMISSIONS', '0') == '1'
 SITE_ENV = os.getenv('PAVZA_SITE_ENV', 'portfolio_demo')
 MENU_IMAGES = {'flat-white.webp', 'cappuccino.webp', 'iced-latte.webp', 'croissant.webp'}
+MEDIA_DIR = DATA / 'media'
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+MEDIA_LIMITS = {'image': 12 * 1024 * 1024, 'video': 80 * 1024 * 1024}
+STATIC_IMAGES = {'assets/pavza-interior.webp','assets/pavza-mobile.webp','assets/pavza-editorial-detail.webp','assets/flat-white.webp','assets/cappuccino.webp','assets/iced-latte.webp','assets/croissant.webp'}
+STATIC_VIDEOS = {'assets/pavza-photo-motion.mp4'}
 CATEGORIES = {'coffee', 'cold', 'bakery'}
 SLOTS = [f'{i:02d}:00' for i in range(9, 20)]
 TABLES = [('T1', 2), ('T2', 2), ('T3', 4), ('T4', 4), ('T5', 6)]  # illustrative demo floor plan
@@ -224,7 +233,7 @@ class MenuInput(BaseModel):
     @field_validator('image')
     @classmethod
     def image_check(cls, s):
-        if s not in MENU_IMAGES:
+        if s not in MENU_IMAGES and not is_approved_media(s, 'image'):
             raise ValueError('Unknown image')
         return s
 
@@ -235,6 +244,189 @@ class MenuInput(BaseModel):
             raise ValueError('Invalid item id')
         return s
 
+
+DEFAULT_CONTENT = {
+    'hero': {
+        'eyebrow':'SPECIALTY COFFEE & SLOW DAYS',
+        'titleTop':'Усе', 'titleAccent':'почекає.',
+        'description':'Крім миті з доброю кавою. Заходь по свій час — повільний, теплий і справжній.',
+        'poster':'assets/pavza-interior.webp',
+        'video':'assets/pavza-photo-motion.mp4',
+        'detailImage':'assets/pavza-editorial-detail.webp'
+    },
+    'services': [
+        {'title':'Specialty кава','description':'Ароматні зерна, точна екстракція та смак із характером.','image':'assets/flat-white.webp'},
+        {'title':'Свіжа випічка','description':'Мигдальні круасани й теплі дрібниці до чашки кави.','image':'assets/croissant.webp'},
+        {'title':'Кава з собою','description':'Забери свою улюблену паузу з собою в місто.','image':'assets/cappuccino.webp'}
+    ]
+}
+
+def is_approved_media(value: str, kind: str) -> bool:
+    if not isinstance(value,str): return False
+    if kind == 'image' and value in STATIC_IMAGES: return True
+    if kind == 'video' and value in STATIC_VIDEOS: return True
+    if not re.fullmatch(r'/media/[a-zA-Z0-9_-]{8,64}\.(?:webp|jpe?g|png|mp4|webm)',value): return False
+    suffix=value.rsplit('.',1)[-1]
+    if kind=='image' and suffix not in ('webp','jpg','jpeg','png'): return False
+    if kind=='video' and suffix not in ('mp4','webm'): return False
+    return (MEDIA_DIR / value.split('/')[-1]).is_file()
+
+class HeroInput(BaseModel):
+    eyebrow: str = Field(max_length=75)
+    titleTop: str = Field(min_length=1,max_length=25)
+    titleAccent: str = Field(min_length=1,max_length=25)
+    description: str = Field(min_length=8,max_length=260)
+    poster: str
+    video: str
+    detailImage: str
+
+    @field_validator('poster','detailImage')
+    @classmethod
+    def image_ok(cls,v):
+        if not is_approved_media(v,'image'): raise ValueError('Оберіть доступне фото з медіатеки')
+        return v
+    @field_validator('video')
+    @classmethod
+    def video_ok(cls,v):
+        if v and not is_approved_media(v,'video'): raise ValueError('Оберіть доступне відео з медіатеки')
+        return v
+
+class ServiceInput(BaseModel):
+    title: str = Field(min_length=2,max_length=55)
+    description: str = Field(min_length=4,max_length=220)
+    image: str
+    @field_validator('image')
+    @classmethod
+    def image_ok(cls,v):
+        if not is_approved_media(v,'image'): raise ValueError('Оберіть доступне фото')
+        return v
+
+def get_content():
+    with db() as cx:
+        row=cx.execute("SELECT value FROM settings WHERE key='site_content'").fetchone()
+    if row:
+        try: return json.loads(row[0])
+        except (ValueError,TypeError): pass
+    return json.loads(json.dumps(DEFAULT_CONTENT))
+
+def save_content(value):
+    with db() as cx:
+        cx.execute("INSERT INTO settings(key,value) VALUES('site_content',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(value,ensure_ascii=False),))
+
+@app.get('/api/content')
+def public_content():
+    return get_content()
+
+@app.get('/media/{filename}')
+def serve_media(filename:str):
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{8,64}\.(?:webp|jpe?g|png|mp4|webm)',filename):
+        raise HTTPException(404,detail='Файл не знайдено')
+    path=MEDIA_DIR / filename
+    if not path.is_file(): raise HTTPException(404,detail='Файл не знайдено')
+    media='video/mp4' if filename.endswith('.mp4') else 'video/webm' if filename.endswith('.webm') else 'image/'+ ('jpeg' if filename.endswith(('.jpg','.jpeg')) else filename.rsplit('.',1)[-1])
+    return FileResponse(path,media_type=media,headers={'Cache-Control':'public, max-age=86400'})
+
+@app.get('/api/admin/content')
+def admin_content(request:Request):
+    require_admin(request)
+    return get_content()
+
+@app.put('/api/admin/hero')
+def update_hero(data:HeroInput, request:Request):
+    require_admin(request,csrf=True)
+    content=get_content();content['hero']=data.model_dump();save_content(content)
+    return {'ok':True,'hero':content['hero']}
+
+@app.put('/api/admin/services')
+def update_services(items:list[ServiceInput], request:Request):
+    require_admin(request,csrf=True)
+    if len(items)>12: raise HTTPException(422,detail='Максимум 12 послуг')
+    content=get_content();content['services']=[x.model_dump() for x in items];save_content(content)
+    return {'ok':True,'services':content['services']}
+
+@app.get('/api/admin/media')
+def list_media(request:Request):
+    require_admin(request)
+    files=[]
+    for p in sorted(MEDIA_DIR.iterdir(),key=lambda v:v.stat().st_mtime,reverse=True):
+        if p.is_file() and re.fullmatch(r'[a-zA-Z0-9_-]{8,64}\.(?:webp|jpe?g|png|mp4|webm)',p.name):
+            files.append({'url':'/media/'+p.name,'name':p.name,'kind':'video' if p.suffix in ('.mp4','.webm') else 'image','size':p.stat().st_size})
+    return {'files':files[:100]}
+
+@app.post('/api/admin/media/upload',status_code=201)
+async def upload_media(request:Request, file:UploadFile=File(...)):
+    require_admin(request,csrf=True)
+    throttle(request,'media_upload',25,3600)
+    original=Path(file.filename or '').suffix.lower()
+    image_exts={'.jpg','.jpeg','.png','.webp'}
+    video_exts={'.mp4','.webm'}
+    if original not in image_exts|video_exts:
+        raise HTTPException(415,detail='Лише JPG, PNG, WebP, MP4 або WebM')
+    kind='image' if original in image_exts else 'video'
+    cap=MEDIA_LIMITS[kind]
+    if request.headers.get('content-length') and int(request.headers['content-length'])>cap+4096:
+        raise HTTPException(413,detail='Файл завеликий')
+    name=secrets.token_hex(14)+original
+    dest=MEDIA_DIR/name
+    length=0
+    head=b''
+    try:
+        with dest.open('xb') as stream:
+            while True:
+                chunk=await file.read(512*1024)
+                if not chunk: break
+                if not head: head=chunk[:24]
+                length+=len(chunk)
+                if length>cap: raise HTTPException(413,detail='Файл завеликий')
+                stream.write(chunk)
+        # Reject spoofed content instead of trusting filename or Content-Type.
+        valid=(original in ('.jpg','.jpeg') and head.startswith(b'\xff\xd8\xff')) or (original=='.png' and head.startswith(b'\x89PNG\r\n\x1a\n')) or (original=='.webp' and head.startswith(b'RIFF') and head[8:12]==b'WEBP') or (original=='.mp4' and head[4:8]==b'ftyp') or (original=='.webm' and head.startswith(b'\x1a\x45\xdf\xa3'))
+        if not valid or length<32: raise HTTPException(415,detail='Формат файла не відповідає розширенню')
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+    return {'ok':True,'url':'/media/'+name,'kind':kind,'size':length}
+
+# Private, one-shot import of the owner's provided Freepik video.
+# The expiring signed URL is an environment variable, never committed to the public repository.
+def import_hero_video_once():
+    url=os.getenv('PAVZA_IMPORT_HERO_VIDEO_URL','').strip()
+    if not url: return
+    fixed=MEDIA_DIR/'pavza_hero_import.mp4'
+    if not fixed.is_file():
+        temp=MEDIA_DIR/'pavza_hero_import.part'
+        try:
+            parsed=urlparse(url)
+            if parsed.scheme!='https' or parsed.hostname!='pikaso.cdnpk.net': raise ValueError('Недозволене джерело відео')
+            req=URLRequest(url,headers={'User-Agent':'PAVZA-MediaImport/1.0'})
+            with urlopen(req,timeout=35) as response:
+                if urlparse(response.url).hostname!='pikaso.cdnpk.net': raise ValueError('Недозволене переспрямування')
+                length=0; head=b''
+                with temp.open('wb') as fp:
+                    while True:
+                        chunk=response.read(512*1024)
+                        if not chunk: break
+                        if not head: head=chunk[:24]
+                        length+=len(chunk)
+                        if length>MEDIA_LIMITS['video']: raise ValueError('Відео більше 80 МБ')
+                        fp.write(chunk)
+                if head[4:8]!=b'ftyp' or length<1024: raise ValueError('Отриманий файл не є MP4')
+                temp.replace(fixed)
+        except Exception as exc:
+            logging.warning('PAVZA hero video import unsuccessful: %s',type(exc).__name__)
+            temp.unlink(missing_ok=True)
+            return
+    content=get_content()
+    # Do not overwrite a video the owner already selected in admin.
+    if content['hero']['video']==DEFAULT_CONTENT['hero']['video']:
+        content['hero']['video']='/media/pavza_hero_import.mp4'
+        save_content(content)
+    logging.info('PAVZA hero video ready on persistent storage')
+
+if os.getenv('PAVZA_IMPORT_HERO_VIDEO_URL'):
+    threading.Thread(target=import_hero_video_once,daemon=True).start()
 
 class LoginInput(BaseModel):
     password: str
